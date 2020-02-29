@@ -1,81 +1,110 @@
 # Sending data to esp8266
 
-#include <SoftwareSerial.h>
-#define rxPin 8
-#define txPin 7
-#define Samplesize   13         // filterSample number
+import socket
+import pygame
+import time
+import math
 
-SoftwareSerial mySerial(rxPin, txPin); // RX, TX
+pygame.init()
+pygame.joystick.init()
+joystick = pygame.joystick.Joystick(0)
+joystick.init() 
+numaxes = joystick.get_numaxes()
 
-int Array_x [Samplesize];  
-int Array_y [Samplesize];      // array for holding raw sensor values for sensor
+time.sleep(2)
+arr = []
 
-int rawData_x,rawData_y;      
-int smoothData_x,smoothData_y;
-String toSend_x,toSend_y;
+def digit_counter(Number):
+    Count = 0
+    while(Number > 0):
+        Number = Number // 10
+        Count = Count + 1
+    return Count
 
-void setup(){
-  Serial.begin(9600);
-  pinMode(6,OUTPUT);
-  pinMode(5,OUTPUT);
-}
+def getAxis_fb(number):
+    if(joystick.get_axis(number) < -0.1 or joystick.get_axis(number) > 0.1):
+        sign = joystick.get_axis(number)/abs(joystick.get_axis(number))
+        nos = sign*math.log(9*abs(joystick.get_axis(number)) + 1)/2.303
+        nos = int(nos*-1*1024)
+        if nos > 0:
+            forward = abs(nos)
+            backward = 0
+        elif(nos < 0):
+            forward = 0
+            backward = abs(nos)
+        else:
+            forward = 0
+            backward = 0
 
-void loop()
-{     
-  digitalWrite(6,HIGH);
-  digitalWrite(5,LOW);
-  rawData_x = analogRead(A0);                              // read X-axis of accelerometer
-  rawData_y = analogRead(A1);
-  
-  smoothData_x = digitalSmooth(rawData_x, Array_x);  
-  smoothData_y = digitalSmooth(rawData_y, Array_y); 
-  
-  toSend_x = String(smoothData_x);
-  toSend_y = String(smoothData_y);
+        return forward,backward
 
-//  Serial.write(smoothData_x);
-//  Serial.println(smoothData_x);
-  Serial.print(toSend_y + " ");
-  
-  delay(100);
-}
+def getAxis_lr(number):
+    if(joystick.get_axis(number) < -0.1 or joystick.get_axis(number) > 0.1):
+        sign = joystick.get_axis(number)/abs(joystick.get_axis(number))
+        nos = sign*math.log(9*abs(joystick.get_axis(number)) + 1)/2.303
+        nos = int(nos*1024)
+        if nos > 0:
+            left = abs(nos)
+            right = 0
+        elif(nos < 0):
+            left = 0
+            right = abs(nos)
+        else:
+            left = 0
+            right = 0
 
-  int digitalSmooth(int rawIn, int *sensSmoothArray){         // "int *sensSmoothArray" passes an array to the function - the asterisk indicates the array name is a pointer
-  int j, k, temp, top, bottom;
-  long total;
-  static int i;
-  static int sorted[Samplesize];
-  boolean done;
+        return left,right
 
-  i = (i + 1) % Samplesize;                  // increment counter and roll over if necc. -  % (modulo operator) rolls over variable
-  sensSmoothArray[i] = rawIn;           // input new data into the oldest slot
+def main():
+    port = 1111
+    host = '192.168.43.139'
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-  for (j=0; j<Samplesize; j++){           // transfer data array into anther array for sorting and averaging
-    sorted[j] = sensSmoothArray[j];
-  }
+    while True:
+        pygame.event.pump()
+        result_fb = getAxis_fb(1)
+        result_lr = getAxis_lr(4)
 
-  done = 0;                    // flag to know when we're done sorting              
-  while(done != 1){        // simple swap sort, sorts numbers from lowest to highest
-    done = 1;
-    for (j = 0; j < (Samplesize - 1); j++){
-      if (sorted[j] > sorted[j + 1]){        // numbers are out of order - swap
-        temp = sorted[j + 1];
-        sorted [j+1] =  sorted[j] ;
-        sorted [j] = temp;
-        done = 0;
-      }
-    }
-  }
+        forward = 0
+        backward = 0
+        left = 0
+        right = 0
 
-  bottom = max(((Samplesize * 15)  / 100), 1); 
-  top = min((((Samplesize * 85) / 100) + 1  ), (Samplesize - 1));   // the + 1 is to make up for asymmetry caused by integer rounding
-  k = 0;
-  total = 0;
-  for ( j = bottom; j< top; j++){
-    total += sorted[j];         // total remaining indices
-    k++; 
+        if result_fb != None:
+            forward = result_fb[0]
+            backward = result_fb[1]
+        if result_lr != None:
+            left = result_lr[0]
+            right = result_lr[1]
 
-  }
+        # print("Forward :",forward)
+        # print("Backward :",backward)
+        # print("Left :",left)
+        # print("Right :",right)
 
-  return total / k;            // divide by number of samples
-}
+        array = [forward , backward , right , left]
+        final_array = []
+        for i in array:
+            digits = digit_counter(i)
+            if digits == 0:
+                str_value = "0000"
+            elif digits == 1:
+                str_value = str(i)
+                str_value = "000"+str_value
+            elif digits == 2:
+                str_value = str(i)
+                str_value = "00"+str_value
+            elif digits == 3:
+                str_value = str(i)
+                str_value = "0"+str_value
+            else:
+                str_value = str(i)
+            final_array.append(str_value)
+
+        string =  final_array[0] + final_array[1]  + final_array[2] + final_array[3]
+        s.sendto(string, (host, port))
+        time.sleep(0.15)
+
+
+if __name__ == "__main__":
+    main()
